@@ -1,4 +1,4 @@
-# Nikee's Zara - Restaurant Ordering System
+# PayPer-Suite - Restaurant Ordering System
 
 This is a comprehensive, modern restaurant management application built with Next.js, TypeScript, and Tailwind CSS. It provides a seamless, real-time ordering and management experience for customers, captains, kitchen staff, and POS operators, all running locally within the browser.
 
@@ -133,7 +133,7 @@ firebase login
         -   Use the arrow keys to navigate to **App Hosting: Deploy Next.js web apps to a new backend**.
         -   Press `Space` to select it, then press `Enter`.
     -   "Please select an option:"
-        -   Select `Use an existing project` and choose your project (`nikees-ordering-system`).
+        -   Select `Use an existing project` and choose your project (`payper-suite`).
     -   "What do you want to use as your public directory?"
         -   Press `Enter` to accept the default (`.next`). This is automatically detected.
     -   The CLI will then create a Firebase backend for App Hosting.
@@ -166,7 +166,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 
 2.  **Create a Service Account**: The GitHub Action needs a service account to authenticate with your Firebase project.
     *   Go to the Google Cloud Console: [https://console.cloud.google.com/iam-admin/service-accounts](https://console.cloud.google.com/iam-admin/service-accounts)
-    *   Make sure you have selected your Firebase project (`nikees-ordering-system`) from the project dropdown at the top of the page.
+    *   Make sure you have selected your Firebase project (`payper-suite`) from the project dropdown at the top of the page.
     *   Click **+ CREATE SERVICE ACCOUNT**.
     *   Give it a name (e.g., `firebase-deploy-action`) and an ID.
     *   Click **CREATE AND CONTINUE**.
@@ -184,7 +184,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 4.  **Add the Key as a GitHub Secret**:
     *   Go to your GitHub repository and navigate to **Settings** > **Secrets and variables** > **Actions**.
     *   Click the **New repository secret** button.
-    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_NIKEES_ORDERING_SYSTEM`
+    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_PAYPER_SUITE`
     *   For the **Secret**, copy the *entire content* of the JSON key file you downloaded and paste it into the box.
     *   Click **Add secret**.
 
