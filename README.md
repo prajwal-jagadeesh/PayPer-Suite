@@ -98,13 +98,7 @@ This will start the Next.js development server, typically on port `9002`.
 
 ## Deployment to Firebase
 
-This project is configured for both manual and automated deployments to Firebase App Hosting, which works perfectly with the free Spark plan.
-
-### Important: Enable Billing
-
-Firebase App Hosting requires a billing account to be enabled on your Google Cloud project, even if you stay within the generous free tier. **This does not mean you will be charged automatically.** You only pay for usage that exceeds the free limits.
-
-To enable billing, go to your Firebase project's "Usage and billing" page and upgrade your project to the **Blaze (Pay as you go)** plan. You will be prompted to link or create a billing account.
+This project is configured for both manual and automated deployments to Firebase Hosting. This method works perfectly with the free Spark plan.
 
 ### Manual Deployment
 
@@ -126,22 +120,22 @@ firebase login
 #### Step 2: Initialize Firebase (If you haven't already)
 1.  In the root directory of your project, run the following command:
     ```bash
-    firebase init
+    firebase init hosting
     ```
 2.  You will be prompted with several questions. Follow these steps:
-    -   "Which Firebase features do you want to set up for this directory?"
-        -   Use the arrow keys to navigate to **App Hosting: Deploy Next.js web apps to a new backend**.
-        -   Press `Space` to select it, then press `Enter`.
     -   "Please select an option:"
         -   Select `Use an existing project` and choose your project (`payper-suite`).
     -   "What do you want to use as your public directory?"
-        -   Press `Enter` to accept the default (`.next`). This is automatically detected.
-    -   The CLI will then create a Firebase backend for App Hosting.
+        -   Type `out` and press `Enter`.
+    -   "Configure as a single-page app (rewrite all urls to /index.html)?"
+        -   Type `y` and press `Enter`.
+    -   "Set up automatic builds and deploys with GitHub?"
+        -   Type `N` (for No) and press `Enter`, as our workflows are already configured.
 
 #### Step 3: Deploy Manually
 After initialization, you can deploy your application at any time by running:
 ```bash
-firebase deploy
+firebase deploy --only hosting
 ```
 The CLI will build your Next.js application and deploy it, providing you with the live URL.
 
@@ -153,42 +147,30 @@ This repository is equipped with GitHub Actions to automatically deploy your app
 
 To enable this, you need to connect GitHub to Firebase and provide it with the necessary permissions.
 
-1.  **Connect GitHub to Firebase**:
-    *   In your terminal, run the following command from your project's root directory:
-        ```bash
-        firebase init hosting:github
-        ```
-    *   Follow the prompts:
-        *   **Select the repository**: Choose your GitHub repository (`your-username/your-repo-name`).
-        *   **Set up deployment script**: Say **yes** to setting up a build script. The command should be `npm ci && npm run build`.
-        *   **Deploy on merge?**: Say **yes** when asked if you want to deploy on merging to the `main` branch.
-        *   **Overwrite existing files?**: Say **no** if it asks to overwrite the workflow files, as they are already in the repository.
-
-2.  **Create a Service Account**: The GitHub Action needs a service account to authenticate with your Firebase project.
+1.  **Create a Service Account**: The GitHub Action needs a service account to authenticate with your Firebase project.
     *   Go to the Google Cloud Console: [https://console.cloud.google.com/iam-admin/service-accounts](https://console.cloud.google.com/iam-admin/service-accounts)
     *   Make sure you have selected your Firebase project (`payper-suite`) from the project dropdown at the top of the page.
     *   Click **+ CREATE SERVICE ACCOUNT**.
-    *   Give it a name (e.g., `firebase-deploy-action`) and an ID.
+    *   Give it a name (e.g., `github-deployer`) and an ID.
     *   Click **CREATE AND CONTINUE**.
-    *   In the "Grant this service account access to project" step, add the following roles:
-        *   `Firebase App Hosting Admin`
-        *   `API Keys Admin`
+    *   In the "Grant this service account access to project" step, add the following role:
+        *   `Firebase Hosting Admin`
     *   Click **CONTINUE**, then **DONE**.
 
-3.  **Generate a Key for the Service Account**:
+2.  **Generate a Key for the Service Account**:
     *   Find the service account you just created in the list.
     *   Click the three-dot menu (⋮) under "Actions" and select **Manage keys**.
     *   Click **ADD KEY** > **Create new key**.
     *   Choose **JSON** as the key type and click **CREATE**. A JSON file will download to your computer.
 
-4.  **Add the Key as a GitHub Secret**:
+3.  **Add the Key as a GitHub Secret**:
     *   Go to your GitHub repository and navigate to **Settings** > **Secrets and variables** > **Actions**.
     *   Click the **New repository secret** button.
     *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_PAYPER_SUITE`
     *   For the **Secret**, copy the *entire content* of the JSON key file you downloaded and paste it into the box.
     *   Click **Add secret**.
 
-Now, every time you merge a pull request into your `main` branch, the GitHub Action will automatically run, build your project, and deploy it to Firebase App Hosting.
+Now, every time you merge a pull request into your `main` branch, the GitHub Action will automatically run, build your project, and deploy it to Firebase Hosting.
 
 ---
 
