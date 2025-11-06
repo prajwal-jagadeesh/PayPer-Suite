@@ -62,7 +62,6 @@ The application's logic is built around the lifecycle of an `Order`.
 ### 5. Payment
 - Once an order is `'Billed'`, the "Proceed to Pay" button appears for the customer.
 - The customer can choose a payment method:
-    - **UPI**: Attempts to open a UPI app on the customer's device.
     - **Card** or **Cash/QR**: Sets a `paymentMethod` on the order object.
 - This `paymentMethod` triggers a real-time notification on the corresponding `OrderCard` in the Captain and POS views (e.g., "Card Payment Requested").
 - A captain acknowledges the request, clears the notification, and assists the customer.
@@ -124,7 +123,7 @@ In your terminal, log in to your Firebase account:
 firebase login
 ```
 
-#### Step 2: Initialize Firebase
+#### Step 2: Initialize Firebase (If you haven't already)
 1.  In the root directory of your project, run the following command:
     ```bash
     firebase init
@@ -134,7 +133,7 @@ firebase login
         -   Use the arrow keys to navigate to **App Hosting: Deploy Next.js web apps to a new backend**.
         -   Press `Space` to select it, then press `Enter`.
     -   "Please select an option:"
-        -   Select `Use an existing project` and choose the project you created earlier.
+        -   Select `Use an existing project` and choose your project (`nikees-ordering-system`).
     -   "What do you want to use as your public directory?"
         -   Press `Enter` to accept the default (`.next`). This is automatically detected.
     -   The CLI will then create a Firebase backend for App Hosting.
@@ -167,7 +166,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 
 2.  **Create a Service Account**: The GitHub Action needs a service account to authenticate with your Firebase project.
     *   Go to the Google Cloud Console: [https://console.cloud.google.com/iam-admin/service-accounts](https://console.cloud.google.com/iam-admin/service-accounts)
-    *   Make sure you have selected your Firebase project from the project dropdown at the top of the page.
+    *   Make sure you have selected your Firebase project (`nikees-ordering-system`) from the project dropdown at the top of the page.
     *   Click **+ CREATE SERVICE ACCOUNT**.
     *   Give it a name (e.g., `firebase-deploy-action`) and an ID.
     *   Click **CREATE AND CONTINUE**.
@@ -185,7 +184,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 4.  **Add the Key as a GitHub Secret**:
     *   Go to your GitHub repository and navigate to **Settings** > **Secrets and variables** > **Actions**.
     *   Click the **New repository secret** button.
-    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_NIKEES_ZARA`
+    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_NIKEES_ORDERING_SYSTEM`
     *   For the **Secret**, copy the *entire content* of the JSON key file you downloaded and paste it into the box.
     *   Click **Add secret**.
 
@@ -205,4 +204,3 @@ Now, every time you merge a pull request into your `main` branch, the GitHub Act
 - **`public`**: Static assets.
 - **`tailwind.config.ts`**: Configuration for Tailwind CSS.
 - **`next.config.js`**: Configuration for Next.js.
-```
