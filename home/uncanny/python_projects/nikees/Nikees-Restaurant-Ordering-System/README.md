@@ -98,13 +98,15 @@ This will start the Next.js development server, typically on port `9002`.
 
 ## Deployment to Firebase
 
-This project is configured for both manual and automated deployments to Firebase App Hosting, which works perfectly with the free Spark plan.
+This project is configured for both manual and automated deployments to Firebase App Hosting.
 
-### Important: Enable Billing
+### Important: Enable Billing (Required for App Hosting)
 
-Firebase App Hosting requires a billing account to be enabled on your Google Cloud project, even if you stay within the generous free tier. **This does not mean you will be charged automatically.** You only pay for usage that exceeds the free limits.
+Firebase App Hosting requires your Firebase project to be upgraded to the **Blaze (Pay as you go)** plan.
 
-To enable billing, go to your Firebase project's "Usage and billing" page and upgrade your project to the **Blaze (Pay as you go)** plan. You will be prompted to link or create a billing account.
+**This does not mean you will be charged automatically.** The Blaze plan includes a generous free tier for all services. You only pay for usage that exceeds the free limits. For an application of this size, you are very likely to stay within the free tier.
+
+To enable billing, go to your Firebase project's "Usage and billing" page and follow the instructions to upgrade your project. You will need to link a Google Cloud billing account.
 
 ### Manual Deployment
 
@@ -133,7 +135,7 @@ firebase login
         -   Use the arrow keys to navigate to **App Hosting: Deploy Next.js web apps to a new backend**.
         -   Press `Space` to select it, then press `Enter`.
     -   "Please select an option:"
-        -   Select `Use an existing project` and choose your project (`nikees-ordering-system`).
+        -   Select `Use an existing project` and choose your project (`payper-suite`).
     -   "What do you want to use as your public directory?"
         -   Press `Enter` to accept the default (`.next`). This is automatically detected.
     -   The CLI will then create a Firebase backend for App Hosting.
@@ -166,7 +168,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 
 2.  **Create a Service Account**: The GitHub Action needs a service account to authenticate with your Firebase project.
     *   Go to the Google Cloud Console: [https://console.cloud.google.com/iam-admin/service-accounts](https://console.cloud.google.com/iam-admin/service-accounts)
-    *   Make sure you have selected your Firebase project (`nikees-ordering-system`) from the project dropdown at the top of the page.
+    *   Make sure you have selected your Firebase project (`payper-suite`) from the project dropdown at the top of the page.
     *   Click **+ CREATE SERVICE ACCOUNT**.
     *   Give it a name (e.g., `firebase-deploy-action`) and an ID.
     *   Click **CREATE AND CONTINUE**.
@@ -184,7 +186,7 @@ To enable this, you need to connect GitHub to Firebase and provide it with the n
 4.  **Add the Key as a GitHub Secret**:
     *   Go to your GitHub repository and navigate to **Settings** > **Secrets and variables** > **Actions**.
     *   Click the **New repository secret** button.
-    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_NIKEES_ORDERING_SYSTEM`
+    *   For the **Name**, enter exactly: `FIREBASE_SERVICE_ACCOUNT_PAYPER_SUITE`
     *   For the **Secret**, copy the *entire content* of the JSON key file you downloaded and paste it into the box.
     *   Click **Add secret**.
 
