@@ -1,3 +1,4 @@
+'use client';
 import { Suspense } from 'react';
 import CustomerView from '@/app/customer/CustomerView';
 import { Skeleton } from '@/components/ui/skeleton';

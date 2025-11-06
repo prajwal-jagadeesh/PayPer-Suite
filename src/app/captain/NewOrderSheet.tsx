@@ -1,6 +1,6 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { useCollection, useFirebase, useUser } from '@/firebase';
+import { useCollection, useFirebase, useUser, useMemoFirebase } from '@/firebase';
 import { collection, query, where } from 'firebase/firestore';
 import { addOrder, addItemsToOrder } from '@/lib/orders-store';
 import type { MenuItem, OrderItem, Table, Order } from '@/lib/types';
@@ -42,10 +42,17 @@ export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetPro
     const { firestore } = useFirebase();
     const { user } = useUser();
     
-    const { data: allOrders } = useCollection<Order>(collection(firestore, 'orders'));
-    const { data: tables } = useCollection<Table>(collection(firestore, 'tables'));
-    const { data: allMenuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
-    const { data: menuCategoriesData } = useCollection(collection(firestore, 'menuCategories'));
+    const ordersQuery = useMemoFirebase(() => collection(firestore, 'orders'), [firestore]);
+    const { data: allOrders } = useCollection<Order>(ordersQuery);
+
+    const tablesQuery = useMemoFirebase(() => collection(firestore, 'tables'), [firestore]);
+    const { data: tables } = useCollection<Table>(tablesQuery);
+
+    const menuItemsQuery = useMemoFirebase(() => collection(firestore, 'menuItems'), [firestore]);
+    const { data: allMenuItems } = useCollection<MenuItem>(menuItemsQuery);
+    
+    const menuCategoriesQuery = useMemoFirebase(() => collection(firestore, 'menuCategories'), [firestore]);
+    const { data: menuCategoriesData } = useCollection(menuCategoriesQuery);
     
     const menuCategories = useMemo(() => menuCategoriesData?.map(c => c.name) || [], [menuCategoriesData]);
 

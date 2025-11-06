@@ -1,3 +1,4 @@
+'use client';
 import { Suspense } from 'react';
 import KDSView from './KDSView';
 import { Skeleton } from '@/components/ui/skeleton';
