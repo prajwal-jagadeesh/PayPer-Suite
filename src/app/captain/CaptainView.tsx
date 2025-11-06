@@ -123,8 +123,8 @@ export default function CaptainView() {
 
   if (!isHydrated) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {[...Array(8)].map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+        {[...Array(10)].map((_, i) => (
           <Skeleton key={i} className="h-64 w-full" />
         ))}
       </div>
@@ -133,7 +133,7 @@ export default function CaptainView() {
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         <AnimatePresence>
           {orders
             .sort((a,b) => a.timestamp - b.timestamp)
@@ -174,7 +174,7 @@ export default function CaptainView() {
       </div>
 
       <Sheet open={!!editingOrder} onOpenChange={(isOpen) => !isOpen && setEditingOrderId(null)}>
-        <SheetContent className="flex flex-col">
+        <SheetContent className="w-full sm:max-w-md flex flex-col">
           <SheetHeader>
             <SheetTitle>Edit New Items</SheetTitle>
             <SheetDescription>

@@ -540,7 +540,7 @@ const MenuManagement = () => {
     return (
         <div className="max-w-7xl mx-auto">
              <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <CardTitle>Manage Menu</CardTitle>
                      <Button onClick={openAddForm}>
                         <Plus className="mr-2 h-4 w-4" /> Add Menu Item
@@ -1108,7 +1108,7 @@ const TableGridView = () => {
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9 gap-4">
         <AnimatePresence>
           {sortedTables.map((table) => {
             const order = ordersByTable[table.id];
@@ -1244,7 +1244,7 @@ export default function POSView({
       <main className="flex-1 p-6">
          <Skeleton className="h-12 w-48 mb-6" />
           <div className="space-y-8">
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9 gap-4">
                 {[...Array(22)].map((_, j) => (
                   <Skeleton key={j} className="h-32" />
                 ))}
