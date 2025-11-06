@@ -3,38 +3,39 @@ import { useState, useMemo, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Utensils, Zap, ShoppingBag, Truck } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useHydratedStore, useOrderStore } from '@/lib/orders-store';
-import type { Order, OnlinePlatform } from '@/lib/types';
+import { useCollection, useFirebase, useUser } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import { addOnlineOrder, updateOrderStatus } from '@/lib/orders-store';
+import type { Order, OnlinePlatform, MenuItem } from '@/lib/types';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDistanceToNow } from 'date-fns';
 import OrderStatusBadge from '@/components/OrderStatusBadge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { menuItems } from '@/lib/data';
-
-const getRandomItems = (): { menuItem: any; quantity: number }[] => {
-    const items = [];
-    const numItems = Math.floor(Math.random() * 3) + 1; // 1 to 3 items
-    const shuffled = [...menuItems].sort(() => 0.5 - Math.random());
-    for (let i = 0; i < numItems; i++) {
-        items.push({
-            menuItem: shuffled[i],
-            quantity: Math.floor(Math.random() * 2) + 1, // 1 or 2 quantity
-        });
-    }
-    return items;
-};
 
 const useMockOrderGenerator = (platform: OnlinePlatform, isEnabled: boolean) => {
-    const addOnlineOrder = useOrderStore(state => state.addOnlineOrder);
+    const { firestore } = useFirebase();
+    const { user } = useUser();
+    const { data: menuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
     const { toast } = useToast();
 
     useEffect(() => {
-        if (!isEnabled) return;
+        if (!isEnabled || !user || !menuItems || menuItems.length === 0) return;
 
         const generateOrder = () => {
             const platformOrderId = `${platform.slice(0,1)}${Math.floor(1000 + Math.random() * 9000)}`;
+            
+            const items = [];
+            const numItems = Math.floor(Math.random() * 3) + 1; // 1 to 3 items
+            const shuffled = [...menuItems].sort(() => 0.5 - Math.random());
+            for (let i = 0; i < numItems; i++) {
+                items.push({
+                    menuItem: shuffled[i],
+                    quantity: Math.floor(Math.random() * 2) + 1, // 1 or 2 quantity
+                });
+            }
+
             const newOrder = {
                 onlinePlatform: platform,
                 platformOrderId: platformOrderId,
@@ -43,9 +44,10 @@ const useMockOrderGenerator = (platform: OnlinePlatform, isEnabled: boolean) => 
                     phone: '9876543210',
                     address: '123, Mock Address, City'
                 },
-                items: getRandomItems(),
+                items,
+                userId: user.uid,
             };
-            addOnlineOrder(newOrder);
+            addOnlineOrder(firestore, newOrder);
             toast({
                 title: 'New Online Order!',
                 description: `Order #${platformOrderId} from ${platform} has arrived.`,
@@ -55,23 +57,23 @@ const useMockOrderGenerator = (platform: OnlinePlatform, isEnabled: boolean) => 
         const interval = setInterval(generateOrder, Math.random() * 20000 + 15000); // 15-35 seconds
 
         return () => clearInterval(interval);
-    }, [platform, addOnlineOrder, toast, isEnabled]);
+    }, [platform, isEnabled, firestore, user, menuItems, toast]);
 };
 
 
 const OnlineOrderCard = ({ order }: { order: Order }) => {
-    const updateOrderStatus = useOrderStore(state => state.updateOrderStatus);
+    const { firestore } = useFirebase();
 
     const handleNextAction = () => {
         switch (order.status) {
             case 'Accepted':
-                updateOrderStatus(order.id, 'Preparing');
+                updateOrderStatus(firestore, order.id, 'Preparing');
                 break;
             case 'Food Ready':
-                updateOrderStatus(order.id, 'Out for Delivery');
+                updateOrderStatus(firestore, order.id, 'Out for Delivery');
                 break;
             case 'Out for Delivery':
-                updateOrderStatus(order.id, 'Delivered');
+                updateOrderStatus(firestore, order.id, 'Delivered');
                 break;
         }
     }
@@ -125,13 +127,13 @@ const OnlineOrderCard = ({ order }: { order: Order }) => {
                         <span>₹{order.total.toFixed(2)}</span>
                     </div>
                     {order.status === 'New' && (
-                        <Button onClick={() => updateOrderStatus(order.id, 'Accepted')}>Accept Order</Button>
+                        <Button onClick={() => updateOrderStatus(firestore, order.id, 'Accepted', order)}>Accept Order</Button>
                     )}
                     {actionLabel && (
                         <Button onClick={handleNextAction}>{actionLabel}</Button>
                     )}
                      {order.status !== 'New' && (
-                        <Button variant="destructive" className="mt-2" onClick={() => updateOrderStatus(order.id, 'Cancelled')}>Cancel Order</Button>
+                        <Button variant="destructive" className="mt-2" onClick={() => updateOrderStatus(firestore, order.id, 'Cancelled')}>Cancel Order</Button>
                     )}
                 </CardFooter>
             </Card>
@@ -141,23 +143,23 @@ const OnlineOrderCard = ({ order }: { order: Order }) => {
 
 
 const PlatformTabContent = ({ platform, isLive }: { platform: OnlinePlatform, isLive: boolean }) => {
-    const allOrders = useHydratedStore(useOrderStore, state => state.orders, []);
+    const { firestore } = useFirebase();
+    const onlineOrdersQuery = useMemo(() => query(
+        collection(firestore, 'orders'), 
+        where('orderType', '==', 'online'),
+        where('onlinePlatform', '==', platform),
+        where('status', 'not-in', ['Delivered', 'Cancelled'])
+    ), [firestore, platform]);
+    
+    const { data: onlineOrders } = useCollection<Order>(onlineOrdersQuery);
+    
     useMockOrderGenerator(platform, isLive);
-
-    const onlineOrders = useMemo(() => {
-        return allOrders.filter(o => 
-            o.orderType === 'online' && 
-            o.onlinePlatform === platform && 
-            o.status !== 'Delivered' && 
-            o.status !== 'Cancelled'
-        ).sort((a,b) => a.timestamp - b.timestamp);
-    }, [allOrders, platform]);
 
     return (
         <AnimatePresence>
-            {onlineOrders.length > 0 ? (
+            {(onlineOrders || []).length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {onlineOrders.map(order => <OnlineOrderCard key={order.id} order={order} />)}
+                    {(onlineOrders || []).sort((a,b) => a.timestamp - b.timestamp).map(order => <OnlineOrderCard key={order.id} order={order} />)}
                 </div>
             ) : (
                 <div className="text-center py-20">

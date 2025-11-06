@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import PageHeader from '@/components/PageHeader';
 import { Toaster } from "@/components/ui/toaster";
+import { FirebaseClientProvider } from '@/firebase';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -19,11 +20,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-body antialiased`}>
-        <div className="relative flex min-h-screen w-full flex-col">
-          <PageHeader />
-          <main className="flex-1">{children}</main>
-        </div>
-        <Toaster />
+        <FirebaseClientProvider>
+          <div className="relative flex min-h-screen w-full flex-col">
+            <PageHeader />
+            <main className="flex-1">{children}</main>
+          </div>
+          <Toaster />
+        </FirebaseClientProvider>
       </body>
     </html>
   );

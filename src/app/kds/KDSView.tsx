@@ -1,8 +1,9 @@
 'use client';
 import { useMemo } from 'react';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useTableStore } from '@/lib/tables-store';
-import type { OrderItem, ItemStatus, Order } from '@/lib/types';
+import { useCollection, useFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import { updateOrderItemStatus } from '@/lib/orders-store';
+import type { OrderItem, ItemStatus, Order, Table } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,16 +39,23 @@ type GroupedOrder = {
 }
 
 export default function KDSView() {
-  const allOrders = useHydratedStore(useOrderStore, (state) => state.orders, []);
-  const tables = useHydratedStore(useTableStore, (state) => state.tables, []);
-  const tableMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables]);
-  
-  const updateOrderItemStatus = useOrderStore((state) => state.updateOrderItemStatus);
-  const isHydrated = useHydratedStore(useOrderStore, (state) => state.hydrated, false);
+  const { firestore } = useFirebase();
 
+  const ordersQuery = useMemo(() => query(
+      collection(firestore, "orders"),
+      where("status", "in", ['Confirmed', 'Preparing', 'Ready', 'Billed', 'Accepted', 'Food Ready']),
+      orderBy("timestamp", "asc")
+    ), [firestore]);
+
+  const { data: allOrders, isLoading: isLoadingOrders } = useCollection<Order>(ordersQuery);
+  const { data: tables, isLoading: isLoadingTables } = useCollection<Table>(collection(firestore, 'tables'));
+
+  const tableMap = useMemo(() => new Map(tables?.map(t => [t.id, t.name])), [tables]);
+  
   const kdsOrders = useMemo((): GroupedOrder[] => {
+    if (!allOrders) return [];
     const activeKitchenOrders = allOrders.filter(order => {
-        const relevantStatuses = ['Confirmed', 'Preparing', 'Ready', 'Billed'];
+        const relevantStatuses = ['Confirmed', 'Preparing', 'Ready', 'Billed', 'Accepted', 'Food Ready'];
         return relevantStatuses.includes(order.status);
     });
 
@@ -81,14 +89,14 @@ export default function KDSView() {
 
   }, [allOrders, tableMap]);
 
-  const handleAction = (orderId: string, kotId: string, currentStatus: ItemStatus) => {
+  const handleAction = (orderId: string, kotId: string, currentStatus: ItemStatus, currentItems: OrderItem[]) => {
     const action = itemStatusActions[currentStatus];
     if (action) {
-      updateOrderItemStatus(orderId, kotId, action.next);
+      updateOrderItemStatus(firestore, orderId, kotId, action.next, currentItems);
     }
   };
 
-  if (!isHydrated) {
+  if (isLoadingOrders || isLoadingTables) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
         {[...Array(4)].map((_, i) => (
@@ -151,7 +159,13 @@ export default function KDSView() {
                                           {itemStatusActions[item.itemStatus] && (
                                               <Button
                                                 size="sm"
-                                                onClick={() => handleAction(item.originalOrderId, item.kotId!, item.itemStatus)}
+                                                onClick={() => {
+                                                    const originalOrder = allOrders?.find(o => o.id === item.originalOrderId);
+                                                    if(originalOrder) {
+                                                      handleAction(item.originalOrderId, item.kotId!, item.itemStatus, originalOrder.items)
+                                                    }
+                                                  }
+                                                }
                                                 className="w-full h-7"
                                               >
                                                 {itemStatusActions[item.itemStatus]?.label}

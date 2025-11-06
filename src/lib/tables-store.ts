@@ -1,55 +1,25 @@
 'use client';
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { collection, doc, addDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import {
+  addDocumentNonBlocking,
+  deleteDocumentNonBlocking,
+  updateDocumentNonBlocking,
+} from '@/firebase';
 import type { Table } from './types';
 
-interface TableState {
-  tables: Table[];
-  hydrated: boolean;
-  addTable: (name: string) => void;
-  deleteTable: (id: string) => void;
-  updateTable: (id: string, newName: string) => void;
-  setHydrated: (hydrated: boolean) => void;
-}
+export const addTable = (firestore: any, name: string) => {
+    if(!name.trim()) return;
+    const tablesCollection = collection(firestore, 'tables');
+    addDocumentNonBlocking(tablesCollection, { name: name.trim() });
+};
 
-const initialTables: Table[] = Array.from({ length: 15 }, (_, i) => {
-    return {
-        id: `T${i + 1}`,
-        name: `Table ${i + 1}`,
-    };
-});
+export const deleteTable = (firestore: any, id: string) => {
+    const tableRef = doc(firestore, 'tables', id);
+    deleteDocumentNonBlocking(tableRef);
+};
 
-export const useTableStore = create(
-  persist<TableState>(
-    (set) => ({
-      tables: initialTables,
-      hydrated: false,
-      addTable: (name) =>
-        set((state) => {
-          const newId = `T${Date.now()}`;
-          const newTable: Table = { id: newId, name };
-          return { tables: [...state.tables, newTable] };
-        }),
-      deleteTable: (id) =>
-        set((state) => ({
-          tables: state.tables.filter((table) => table.id !== id),
-        })),
-      updateTable: (id, newName) =>
-        set((state) => ({
-          tables: state.tables.map((table) =>
-            table.id === id ? { ...table, name: newName } : table
-          ),
-        })),
-      setHydrated: (hydrated) => set({ hydrated }),
-    }),
-    {
-      name: 'table-storage',
-      storage: createJSONStorage(() => localStorage),
-       onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.setHydrated(true);
-        }
-      }
-    }
-  )
-);
+export const updateTable = (firestore: any, id: string, newName: string) => {
+    if(!newName.trim()) return;
+    const tableRef = doc(firestore, 'tables', id);
+    updateDocumentNonBlocking(tableRef, { name: newName.trim() });
+};

@@ -1,7 +1,8 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useMenuStore } from '@/lib/menu-store';
+import { useCollection, useFirebase, useUser } from '@/firebase';
+import { collection } from 'firebase/firestore';
+import { addOnlineOrder } from '@/lib/orders-store';
 import type { MenuItem, OrderItem, OnlinePlatform } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter, SheetDescription } from '@/components/ui/sheet';
@@ -9,7 +10,7 @@ import { Plus, Minus, Trash2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,16 +24,19 @@ interface NewOnlineOrderSheetProps {
 
 export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineOrderSheetProps) {
     const { toast } = useToast();
-    const allMenuItems = useHydratedStore(useMenuStore, state => state.menuItems, []);
-    const menuCategories = useHydratedStore(useMenuStore, state => state.menuCategories, []);
-    const addOnlineOrder = useOrderStore(state => state.addOnlineOrder);
-
+    const { firestore } = useFirebase();
+    const { user } = useUser();
+    
+    const { data: allMenuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
+    const { data: menuCategoriesData } = useCollection(collection(firestore, 'menuCategories'));
+    const menuCategories = useMemo(() => menuCategoriesData?.map(c => c.name) || [], [menuCategoriesData]);
+    
     const [selectedPlatform, setSelectedPlatform] = useState<OnlinePlatform | null>(null);
     const [platformOrderId, setPlatformOrderId] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerAddress, setCustomerAddress] = useState('');
-    const [cart, setCart] = useState<Omit<OrderItem, 'kotStatus' | 'itemStatus'>[]>([]);
+    const [cart, setCart] = useState<Omit<OrderItem, 'kotStatus' | 'itemStatus' | 'kotId'>[]>([]);
     const [activeTab, setActiveTab] = useState(menuCategories[0]);
     
     useEffect(() => {
@@ -49,7 +53,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
         }
     }, [isOpen, menuCategories]);
 
-    const menuItems = useMemo(() => allMenuItems.filter(item => item.available), [allMenuItems]);
+    const menuItems = useMemo(() => (allMenuItems || []).filter(item => item.available), [allMenuItems]);
 
     const addToCart = (item: MenuItem) => {
         setCart((prev) => {
@@ -83,7 +87,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
     }, [cart]);
 
     const placeOrder = () => {
-        if (cart.length === 0 || !selectedPlatform || !customerName) {
+        if (cart.length === 0 || !selectedPlatform || !customerName || !user) {
             toast({
                 variant: 'destructive',
                 title: 'Missing Information',
@@ -92,7 +96,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
             return;
         }
 
-        addOnlineOrder({
+        addOnlineOrder(firestore, {
             onlinePlatform: selectedPlatform,
             platformOrderId,
             customerDetails: {
@@ -101,6 +105,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
                 address: customerAddress,
             },
             items: cart,
+            userId: user.uid,
         });
         toast({
             title: 'Order Created',
@@ -123,7 +128,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
                     {/* Menu Section */}
                     <div className="col-span-2 flex flex-col overflow-hidden">
                         <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col overflow-hidden">
-                            <TabsList className="grid w-full grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
+                            <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${menuCategories.length > 0 ? menuCategories.length : 1}, minmax(0, 1fr))`}}>
                             {menuCategories.map((cat) => (
                                 <TabsTrigger key={cat} value={cat}>{cat}</TabsTrigger>
                             ))}
@@ -235,7 +240,7 @@ export default function NewOnlineOrderSheet({ isOpen, onOpenChange }: NewOnlineO
                                         <span>Total</span>
                                         <span>₹{cartTotal.toFixed(2)}</span>
                                     </div>
-                                    <Button size="lg" className="w-full" onClick={placeOrder}>
+                                    <Button size="lg" className="w-full" onClick={placeOrder} disabled={!user}>
                                         Create Order
                                     </Button>
                                 </div>

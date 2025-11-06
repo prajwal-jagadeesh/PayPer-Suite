@@ -2,19 +2,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { MenuItem, OrderItem, Order, OrderStatus, Table, PaymentMethod } from '@/lib/types';
+import { useCollection, useFirebase, useDoc, useUser, useMemoFirebase } from '@/firebase';
+import { collection, doc, query, where } from 'firebase/firestore';
+import { addOrder, addItemsToOrder, setPaymentMethod, clearSwitchedFrom } from '@/lib/orders-store';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Minus, ShoppingCart, Trash2, RotateCcw, WifiOff, QrCode, IndianRupee, CreditCard, Wallet } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useTableStore } from '@/lib/tables-store';
-import { useMenuStore } from '@/lib/menu-store';
-import { useSettingsStore } from '@/lib/settings-store';
-import { useSessionStore } from '@/lib/session-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import OrderStatusBadge from '@/components/OrderStatusBadge';
@@ -23,6 +21,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { useSessionStore } from '@/lib/session-store';
+
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -43,12 +43,12 @@ const statusInfo: Record<OrderStatus, { label: string, description: string, prog
 
 const useRedirectIfSwitched = (currentTable: Table | undefined) => {
     const router = useRouter();
-    const allOrders = useHydratedStore(useOrderStore, state => state.orders, []);
-    const allTables = useHydratedStore(useTableStore, state => state.tables, []);
-    const clearSwitchedFrom = useOrderStore(state => state.clearSwitchedFrom);
+    const { firestore } = useFirebase();
+    const { data: allOrders } = useCollection<Order>(collection(firestore, 'orders'));
+    const { data: allTables } = useCollection<Table>(collection(firestore, 'tables'));
 
     useEffect(() => {
-        if (!currentTable) return;
+        if (!currentTable || !allOrders || !allTables) return;
 
         const switchedOrder = allOrders.find(o => o.switchedFrom === currentTable.id);
         
@@ -56,11 +56,11 @@ const useRedirectIfSwitched = (currentTable: Table | undefined) => {
             const newTable = allTables.find(t => t.id === switchedOrder.tableId);
             if (newTable) {
                 const newTableNumber = newTable.name.replace(/\D/g, '');
-                clearSwitchedFrom(switchedOrder.id);
+                clearSwitchedFrom(firestore, switchedOrder.id);
                 router.replace(`/customer?table=${newTableNumber}`);
             }
         }
-    }, [allOrders, currentTable, allTables, router, clearSwitchedFrom]);
+    }, [allOrders, currentTable, allTables, router, firestore]);
 };
 
 // Haversine formula to calculate distance between two lat/lon points
@@ -85,48 +85,50 @@ export default function CustomerView() {
   const router = useRouter();
   const tableNumberParam = searchParams.get('table') || '1';
   
-  const tables = useHydratedStore(useTableStore, (state) => state.tables, []);
-  const table = useMemo(() => tables.find(t => t.name.toLowerCase().replace(' ', '') === `table${tableNumberParam}`) || tables[0], [tables, tableNumberParam]);
+  const { firestore } = useFirebase();
+  const { tableId: sessionTableId, startTime, isValid: isSessionValid, startSession, endSession, user } = useSessionStore();
 
-  const orders = useHydratedStore(useOrderStore, state => state.orders, []);
-  const addOrder = useOrderStore((state) => state.addOrder);
-  const addItemsToOrder = useOrderStore((state) => state.addItemsToOrder);
-  const setPaymentMethod = useOrderStore((state) => state.setPaymentMethod);
+  const { data: tables } = useCollection<Table>(collection(firestore, "tables"));
+  const table = useMemo(() => tables?.find(t => t.name.toLowerCase().replace(' ', '') === `table${tableNumberParam}`) || (tables?.[0]), [tables, tableNumberParam]);
+  
+  const activeOrderQuery = useMemoFirebase(() => {
+    if(!table || !user) return null;
+    return query(
+        collection(firestore, "orders"),
+        where("tableId", "==", table.id),
+        where("userId", "==", user.uid),
+        where("status", "not-in", ["Paid", "Cancelled"])
+    )
+  }, [firestore, table, user]);
 
-  const allMenuItems = useHydratedStore(useMenuStore, state => state.menuItems, []);
-  const menuItems = useMemo(() => allMenuItems.filter(item => item.available), [allMenuItems]);
-  const menuCategories = useHydratedStore(useMenuStore, state => state.menuCategories, []);
+  const { data: activeOrders } = useCollection<Order>(activeOrderQuery);
+  const activeOrder = useMemo(() => (activeOrders && activeOrders.length > 0) ? activeOrders[0] : undefined, [activeOrders]);
 
-  const restaurantLocation = useHydratedStore(useSettingsStore, state => state.location, { latitude: null, longitude: null });
-  const upiDetails = useHydratedStore(useSettingsStore, state => state.upiDetails, { upiId: '', restaurantName: ''});
-
-  const { sessionId, tableId: sessionTableId, startTime, isValid: isSessionValid, startSession, endSession } = useHydratedStore(useSessionStore, state => state, { sessionId: null, tableId: null, startTime: null, isValid: false, startSession: () => {}, endSession: () => {} });
-
+  const { data: allMenuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
+  const menuItems = useMemo(() => (allMenuItems || []).filter(item => item.available), [allMenuItems]);
+  
+  const { data: menuCategoriesData } = useCollection(collection(firestore, 'menuCategories'));
+  const menuCategories = useMemo(() => menuCategoriesData?.map(c => c.name) || [], [menuCategoriesData]);
+  
+  const { data: restaurantLocation } = useDoc(doc(firestore, 'settings', 'location'));
+  
   const [cart, setCart] = useState<Omit<OrderItem, 'kotStatus' | 'itemStatus' | 'kotId'>[]>([]);
   const [activeTab, setActiveTab] = useState(menuCategories[0]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isPaymentOptionsOpen, setPaymentOptionsOpen] = useState(false);
-
   const [locationState, setLocationState] = useState<{ status: 'idle' | 'checking' | 'ok' | 'error', message: string }>({ status: 'idle', message: '' });
 
   const { toast } = useToast();
-
-  const activeOrder = useMemo(() => {
-    if (!table || !sessionId) return undefined;
-    return orders.find(o => o.tableId === table.id && o.sessionId === sessionId && o.status !== 'Paid' && o.status !== 'Cancelled');
-  }, [orders, table, sessionId]);
 
   // Session and Geolocation Logic
   useEffect(() => {
     if (!table) return;
 
-    // If session is for a different table, end it.
     if (sessionTableId && sessionTableId !== table.id) {
         endSession();
         return;
     }
 
-    // If there's no valid session for this table, start the check.
     if (!isSessionValid || sessionTableId !== table.id) {
       setLocationState({ status: 'checking', message: 'Verifying your location to start a new session...' });
 
@@ -135,8 +137,8 @@ export default function CustomerView() {
         return;
       }
       
-      if (!restaurantLocation.latitude || !restaurantLocation.longitude) {
-        setLocationState({ status: 'ok', message: '' }); // No location set, so we allow orders
+      if (!restaurantLocation?.latitude || !restaurantLocation?.longitude) {
+        setLocationState({ status: 'ok', message: '' });
         startSession(table.id);
         return;
       }
@@ -147,7 +149,7 @@ export default function CustomerView() {
           const userLon = position.coords.longitude;
           const distance = getDistance(userLat, userLon, parseFloat(restaurantLocation.latitude!), parseFloat(restaurantLocation.longitude!));
           
-          if (distance <= 500) { // Increased range for better UX
+          if (distance <= 500) {
              setLocationState({ status: 'ok', message: 'Location verified.' });
              startSession(table.id);
              toast({ title: "Session Started", description: "You can now place your order.", duration: 3000 });
@@ -162,7 +164,6 @@ export default function CustomerView() {
         }
       );
     } else {
-        // Session is valid and for the correct table
         setLocationState({ status: 'ok', message: '' });
     }
   }, [table, restaurantLocation, sessionTableId, isSessionValid, startSession, endSession, toast]);
@@ -171,7 +172,6 @@ export default function CustomerView() {
   useEffect(() => {
     if (!isSessionValid || !startTime) return;
 
-    // If there is an active order, the session does not expire.
     if (activeOrder) return;
     
     const interval = setInterval(() => {
@@ -185,7 +185,7 @@ export default function CustomerView() {
             });
             clearInterval(interval);
         }
-    }, 10000); // Check every 10 seconds
+    }, 10000);
 
     return () => clearInterval(interval);
 
@@ -244,15 +244,16 @@ export default function CustomerView() {
   }, [activeOrder]);
   
   const placeOrUpdateOrder = () => {
-    if (!canPlaceOrder || cart.length === 0 || !table) return;
+    if (!canPlaceOrder || cart.length === 0 || !table || !user) return;
     
     if (activeOrder) {
-      addItemsToOrder(activeOrder.id, cart);
+      addItemsToOrder(firestore, activeOrder, cart);
     } else {
-      addOrder({
+      addOrder(firestore, {
         tableId: table.id,
         items: cart,
-        sessionId: sessionId!,
+        sessionId: user.uid, // Using user uid as session id
+        userId: user.uid,
       });
     }
     setCart([]);
@@ -262,7 +263,7 @@ export default function CustomerView() {
   const handlePaymentSelection = (method: PaymentMethod | null) => {
     if (!activeOrder) return;
     
-    setPaymentMethod(activeOrder.id, method);
+    setPaymentMethod(firestore, activeOrder.id, method);
     
     setPaymentOptionsOpen(false);
 
@@ -278,17 +279,15 @@ export default function CustomerView() {
   const canProceedToPay = useMemo(() => {
     if (!activeOrder) return false;
 
-    // Must not have any 'New' items waiting to be sent to kitchen
     const hasNewItems = activeOrder.items.some(i => i.kotStatus === 'New');
     if (hasNewItems) return false;
 
-    // All items that have been printed must be served
     const printedItems = activeOrder.items.filter(i => i.kotStatus === 'Printed');
     return printedItems.length > 0 && printedItems.every(i => i.itemStatus === 'Served');
   }, [activeOrder]);
 
 
-  const filteredMenuItems = useMemo(() => menuItems.filter(item => item.category === activeTab), [activeTab, menuItems]);
+  const filteredMenuItems = useMemo(() => (menuItems || []).filter(item => item.category === activeTab), [activeTab, menuItems]);
   const isItemInCart = (itemId: string) => activeOrder?.items.some(item => item.menuItem.id === itemId);
   const cartItemCount = useMemo(() => cart.reduce((acc, item) => acc + item.quantity, 0), [cart]);
 
@@ -539,7 +538,7 @@ export default function CustomerView() {
                               <span>₹{(activeOrder.total + newItemsTotal).toFixed(2)}</span>
                           </div>
                           )}
-                          <Button size="lg" className="w-full" onClick={placeOrUpdateOrder} disabled={!canPlaceOrder}>
+                          <Button size="lg" className="w-full" onClick={placeOrUpdateOrder} disabled={!canPlaceOrder || !user}>
                           {activeOrder ? 'Add Items to Order' : 'Place Order'}
                           </Button>
                       </>
@@ -547,7 +546,6 @@ export default function CustomerView() {
                     {activeOrder && cart.length === 0 && (activeOrder.status === 'Billed' || canProceedToPay) && (
                       <Dialog open={isPaymentOptionsOpen} onOpenChange={(isOpen) => {
                           if (!isOpen && !activeOrder.paymentMethod) {
-                              // If dialog is closed without selection, just request bill
                               handlePaymentSelection(null);
                           }
                           setPaymentOptionsOpen(isOpen);

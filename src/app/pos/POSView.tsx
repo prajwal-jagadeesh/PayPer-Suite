@@ -1,10 +1,28 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useTableStore } from '@/lib/tables-store';
-import { useMenuStore } from '@/lib/menu-store';
-import { useSettingsStore } from '@/lib/settings-store';
-import type { Order, Table, MenuItem, OrderItem, UpiDetails, DiscountType } from '@/lib/types';
+import { useCollection, useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
+import { collection, doc, query, where, orderBy } from 'firebase/firestore';
+import {
+  addTable,
+  updateTable,
+  deleteTable,
+} from '@/lib/tables-store';
+import {
+  addMenuItem,
+  updateMenuItem,
+  deleteMenuItem,
+  toggleMenuItemAvailability,
+} from '@/lib/menu-store';
+import {
+  setLocation,
+  setUpiDetails
+} from '@/lib/settings-store';
+import {
+    updateOrderStatus,
+    updateOrderItemsKotStatus,
+    switchTable,
+} from '@/lib/orders-store';
+import type { Order, Table, MenuItem, OrderItem, UpiDetails } from '@/lib/types';
 import OrderCard from '@/components/OrderCard';
 import KOTPreviewSheet from './KOTPreviewSheet';
 import BillPreviewSheet from './BillPreviewSheet';
@@ -62,16 +80,18 @@ const naturalSort = (a: Table, b: Table) => {
 
 const LocationSettings = () => {
     const { toast } = useToast();
-    const location = useHydratedStore(useSettingsStore, (state) => state.location, { latitude: '', longitude: '' });
-    const setLocation = useSettingsStore((state) => state.setLocation);
-
-    const [latitude, setLatitude] = useState(location.latitude || '');
-    const [longitude, setLongitude] = useState(location.longitude || '');
+    const { firestore } = useFirebase();
+    const { data: locationSettings } = useDoc(doc(firestore, 'settings', 'location'));
+    
+    const [latitude, setLatitude] = useState('');
+    const [longitude, setLongitude] = useState('');
 
     useEffect(() => {
-        setLatitude(location.latitude || '');
-        setLongitude(location.longitude || '');
-    }, [location]);
+        if(locationSettings) {
+            setLatitude(locationSettings.latitude || '');
+            setLongitude(locationSettings.longitude || '');
+        }
+    }, [locationSettings]);
 
     const handleFetchLocation = () => {
         if (navigator.geolocation) {
@@ -102,7 +122,7 @@ const LocationSettings = () => {
     };
     
     const handleSave = () => {
-        setLocation(latitude, longitude);
+        setLocation(firestore, latitude, longitude);
          toast({
             title: "Settings Saved",
             description: "Your location settings have been updated.",
@@ -140,17 +160,19 @@ const LocationSettings = () => {
 
 const PaymentSettings = () => {
     const { toast } = useToast();
-    const upiDetails = useHydratedStore(useSettingsStore, (state) => state.upiDetails, { upiId: '', restaurantName: '' });
-    const setUpiDetails = useSettingsStore((state) => state.setUpiDetails);
+    const { firestore } = useFirebase();
+    const { data: upiSettings } = useDoc(doc(firestore, 'settings', 'payment'));
 
     const [details, setDetails] = useState<UpiDetails>({ upiId: '', restaurantName: '' });
 
     useEffect(() => {
-        setDetails(upiDetails);
-    }, [upiDetails]);
+        if(upiSettings) {
+            setDetails(upiSettings);
+        }
+    }, [upiSettings]);
 
     const handleSave = () => {
-        setUpiDetails(details);
+        setUpiDetails(firestore, details);
         toast({
             title: "Settings Saved",
             description: "Your payment settings have been updated.",
@@ -327,29 +349,31 @@ const SettingsManagement = () => {
 
 
 const AnalyticsView = () => {
-    const allOrders = useHydratedStore(useOrderStore, state => state.orders, []);
-    
+    const { firestore } = useFirebase();
     const [dateRange, setDateRange] = useState<DateRange | undefined>({
         from: subDays(new Date(), 6),
         to: new Date(),
     });
 
-    const paidOrders = useMemo(() => allOrders.filter(o => {
-        if (o.status !== 'Paid' && o.status !== 'Delivered') return false;
-        if (!dateRange?.from) return true; // No start date, include all
-        const orderDate = new Date(o.timestamp);
-        const from = startOfDay(dateRange.from);
-        const to = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
-        return orderDate >= from && orderDate <= to;
-    }), [allOrders, dateRange]);
+    const paidOrdersQuery = useMemoFirebase(() => {
+        if (!dateRange?.from) return null;
+        return query(
+            collection(firestore, "orders"),
+            where("status", "in", ["Paid", "Delivered"]),
+            where("timestamp", ">=", startOfDay(dateRange.from).getTime()),
+            where("timestamp", "<=", endOfDay(dateRange.to || dateRange.from).getTime())
+        )
+    }, [firestore, dateRange]);
 
-    const totalRevenue = useMemo(() => paidOrders.reduce((acc, order) => acc + order.total, 0), [paidOrders]);
-    const totalOrders = paidOrders.length;
+    const { data: paidOrders } = useCollection<Order>(paidOrdersQuery);
+
+    const totalRevenue = useMemo(() => (paidOrders || []).reduce((acc, order) => acc + order.total, 0), [paidOrders]);
+    const totalOrders = paidOrders?.length || 0;
     const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     const itemSales = useMemo(() => {
         const sales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-        paidOrders.forEach(order => {
+        (paidOrders || []).forEach(order => {
             order.items.forEach(item => {
                 if (!sales[item.menuItem.id]) {
                     sales[item.menuItem.id] = { name: item.menuItem.name, quantity: 0, revenue: 0 };
@@ -421,7 +445,7 @@ const AnalyticsView = () => {
                          <div className="flex items-center gap-2">
                             <Button variant="outline" onClick={() => setDateRange({ from: new Date(), to: new Date() })}>Today</Button>
                             <Button variant="outline" onClick={() => setDateRange({ from: subDays(new Date(), 6), to: new Date() })}>Last 7 Days</Button>
-                            <Button variant="outline" onClick={() => setDateRange({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) })}>This Month</Button>
+                            <Button variant="outline" onClick={() => setDateRange({ from: startOfMonth(new Date()), to: endOfDay(new Date()) })}>This Month</Button>
                         </div>
                    </div>
                 </CardContent>
@@ -505,12 +529,10 @@ const AnalyticsView = () => {
 };
 
 const MenuManagement = () => {
-    const menuItems = useHydratedStore(useMenuStore, state => state.menuItems, []);
-    const menuCategories = useHydratedStore(useMenuStore, state => state.menuCategories, []);
-    const addMenuItem = useMenuStore(state => state.addMenuItem);
-    const updateMenuItem = useMenuStore(state => state.updateMenuItem);
-    const deleteMenuItem = useMenuStore(state => state.deleteMenuItem);
-    const toggleMenuItemAvailability = useMenuStore(state => state.toggleMenuItemAvailability);
+    const { firestore } = useFirebase();
+    const { data: menuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
+    const { data: menuCategoriesData } = useCollection(collection(firestore, 'menuCategories'));
+    const menuCategories = useMemo(() => menuCategoriesData?.map(c => c.name) || [], [menuCategoriesData]);
     
     const [isFormOpen, setFormOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -529,9 +551,9 @@ const MenuManagement = () => {
     
     const handleSubmit = (formData: Omit<MenuItem, 'id' | 'available'>) => {
       if (editingItem) {
-        updateMenuItem({ ...editingItem, ...formData });
+        updateMenuItem(firestore, { ...editingItem, ...formData });
       } else {
-        addMenuItem(formData);
+        addMenuItem(firestore, formData);
       }
       setFormOpen(false);
       setEditingItem(null);
@@ -576,7 +598,7 @@ const MenuManagement = () => {
                                                     <Switch 
                                                         id={`available-${item.id}`} 
                                                         checked={item.available}
-                                                        onCheckedChange={() => toggleMenuItemAvailability(item.id)}
+                                                        onCheckedChange={() => toggleMenuItemAvailability(firestore, item.id, item.available)}
                                                     />
                                                     <Label htmlFor={`available-${item.id}`} className="text-sm">
                                                         {item.available ? 'Available' : 'Unavailable'}
@@ -601,7 +623,7 @@ const MenuManagement = () => {
                                                             </AlertDialogHeader>
                                                             <AlertDialogFooter>
                                                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                <AlertDialogAction onClick={() => deleteMenuItem(item.id)}>Delete</AlertDialogAction>
+                                                                <AlertDialogAction onClick={() => deleteMenuItem(firestore, item.id)}>Delete</AlertDialogAction>
                                                             </AlertDialogFooter>
                                                         </AlertDialogContent>
                                                     </AlertDialog>
@@ -707,10 +729,8 @@ const MenuItemForm = ({ isOpen, onOpenChange, onSubmit, item, categories }: {
 
 
 const TableManagement = () => {
-    const tables = useHydratedStore(useTableStore, (state) => state.tables, []);
-    const addTable = useTableStore((state) => state.addTable);
-    const deleteTable = useTableStore((state) => state.deleteTable);
-    const updateTable = useTableStore((state) => state.updateTable);
+    const { firestore } = useFirebase();
+    const { data: tables } = useCollection<Table>(collection(firestore, 'tables'));
 
     const [isAddDialogOpen, setAddDialogOpen] = useState(false);
     const [isEditDialogOpen, setEditDialogOpen] = useState(false);
@@ -721,7 +741,7 @@ const TableManagement = () => {
     const [tableToEdit, setTableToEdit] = useState<Table | null>(null);
     const [tableForQRCode, setTableForQRCode] = useState<Table | null>(null);
 
-    const sortedTables = useMemo(() => [...tables].sort(naturalSort), [tables]);
+    const sortedTables = useMemo(() => [...(tables || [])].sort(naturalSort), [tables]);
     
     const [baseUrl, setBaseUrl] = useState('');
     useEffect(() => {
@@ -731,16 +751,14 @@ const TableManagement = () => {
     }, []);
 
     const handleAddTable = () => {
-        if (tableName.trim()) {
-            addTable(tableName.trim());
-            setTableName('');
-            setAddDialogOpen(false);
-        }
+        addTable(firestore, tableName);
+        setTableName('');
+        setAddDialogOpen(false);
     };
 
     const handleUpdateTable = () => {
-        if (tableToEdit && tableName.trim()) {
-            updateTable(tableToEdit.id, tableName.trim());
+        if (tableToEdit) {
+            updateTable(firestore, tableToEdit.id, tableName);
             setTableName('');
             setEditDialogOpen(false);
             setTableToEdit(null);
@@ -819,7 +837,7 @@ const TableManagement = () => {
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={() => deleteTable(table.id)}>Delete</AlertDialogAction>
+                                            <AlertDialogAction onClick={() => deleteTable(firestore, table.id)}>Delete</AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
@@ -988,123 +1006,107 @@ const TableCard = ({
 
 
 const TableGridView = () => {
-  const allOrders = useHydratedStore(useOrderStore, (state) => state.orders, []);
-  const tables = useHydratedStore(useTableStore, (state) => state.tables, []);
-  
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  const [switchingOrder, setSwitchingOrder] = useState<Order | null>(null);
+    const { firestore } = useFirebase();
+    const { data: allOrders, isLoading: isLoadingOrders } = useCollection<Order>(collection(firestore, 'orders'));
+    const { data: tables, isLoading: isLoadingTables } = useCollection<Table>(collection(firestore, 'tables'));
 
-  const [kotPreviewOrder, setKotPreviewOrder] = useState<Order | null>(null);
-  const [billPreviewOrder, setBillPreviewOrder] = useState<Order | null>(null);
-  const [kotPreviewMode, setKotPreviewMode] = useState<'new' | 'reprint'>('new');
-  const [kotReprintId, setKotReprintId] = useState<string | null>(null);
+    const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+    const [switchingOrder, setSwitchingOrder] = useState<Order | null>(null);
 
+    const [kotPreviewOrder, setKotPreviewOrder] = useState<Order | null>(null);
+    const [billPreviewOrder, setBillPreviewOrder] = useState<Order | null>(null);
+    const [kotPreviewMode, setKotPreviewMode] = useState<'new' | 'reprint'>('new');
+    const [kotReprintId, setKotReprintId] = useState<string | null>(null);
 
-  const ordersByTable = useMemo(() => allOrders.reduce((acc, order) => {
-    if (order.orderType === 'dine-in' && order.tableId) {
-        const table = tables.find(t => t.id === order.tableId);
-        if (table && order.status !== 'Paid' && order.status !== 'Cancelled') {
-        acc[table.id] = order;
-        }
-    }
-    return acc;
-  }, {} as Record<string, Order>), [allOrders, tables]);
-  
-  const sortedTables = useMemo(() => [...tables].sort(naturalSort), [tables]);
-
-  const selectedOrder = selectedTableId ? ordersByTable[selectedTableId] : null;
-  const selectedTable = selectedTableId ? tables.find(t => t.id === selectedTableId) : null;
-  
-  const kotPreviewTable = kotPreviewOrder ? tables.find(t => t.id === kotPreviewOrder.tableId) : null;
-  const billPreviewTable = billPreviewOrder ? tables.find(t => t.id === billPreviewOrder.tableId) : null;
-  
-  const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
-  const updateOrderItemsKotStatus = useOrderStore((state) => state.updateOrderItemsKotStatus);
-  const switchTable = useOrderStore((state) => state.switchTable);
-
-  const handlePrintKOT = (order: Order) => {
-    const newItems = order.items.filter(item => item.kotStatus === 'New');
-    if (newItems.length === 0) return;
-    
-    const newItemKotIds = newItems.map(item => item.kotId!);
-    updateOrderItemsKotStatus(order.id, newItemKotIds);
-  };
-
-  const handlePrintBill = (orderId: string) => {
-    updateOrderStatus(orderId, 'Billed');
-  };
-
-  const needsKotPrint = (order: Order) => {
-    return order.status === 'Confirmed' && order.items.some(item => item.kotStatus === 'New');
-  }
-
-  const canGenerateBill = (order: Order) => {
-     // Check if there are any new items that haven't been sent to the kitchen yet.
-     const hasNewItems = order.items.some(i => i.kotStatus === 'New');
-     if (hasNewItems) return false;
-
-     const printedItems = order.items.filter(i => i.kotStatus === 'Printed');
-     if (printedItems.length === 0 && order.status !== 'Billed') return false;
-     
-     // All printed items must be served, unless the order is already billed (for re-printing)
-     if (order.status !== 'Billed') {
-        return printedItems.every(item => item.itemStatus === 'Served');
-     }
-     
-     return true; // Already billed, so we can re-print.
-  }
-
-  const occupiedTableIds = useMemo(() => {
-    const occupiedIds = new Set<string>();
-    allOrders.forEach(order => {
-        if (switchingOrder && order.id === switchingOrder.id) return;
-        if (order.orderType === 'dine-in' && order.tableId && order.status !== 'Paid' && order.status !== 'Cancelled') {
-          occupiedIds.add(order.tableId);
-        }
-    });
-    return occupiedIds;
-  }, [allOrders, switchingOrder]);
-
-  const vacantTables = useMemo(() => {
-    return sortedTables.filter(t => !occupiedTableIds.has(t.id));
-  }, [sortedTables, occupiedTableIds]);
-
-  const handleSwitchTable = (newTableId: string) => {
-    if (switchingOrder) {
-      const success = switchTable(switchingOrder.id, newTableId);
-      if (success) {
-        setSwitchingOrder(null);
-        setSelectedTableId(null);
-      } else {
-        alert('Could not switch table. The selected table might be occupied.');
+    const ordersByTable = useMemo(() => (allOrders || []).reduce((acc, order) => {
+      if (order.orderType === 'dine-in' && order.tableId) {
+          const table = tables?.find(t => t.id === order.tableId);
+          if (table && order.status !== 'Paid' && order.status !== 'Cancelled') {
+          acc[table.id] = order;
+          }
       }
+      return acc;
+    }, {} as Record<string, Order>), [allOrders, tables]);
+    
+    const sortedTables = useMemo(() => [...(tables || [])].sort(naturalSort), [tables]);
+
+    const selectedOrder = selectedTableId ? ordersByTable[selectedTableId] : null;
+    const selectedTable = selectedTableId ? tables?.find(t => t.id === selectedTableId) : null;
+    
+    const kotPreviewTable = kotPreviewOrder ? tables?.find(t => t.id === kotPreviewOrder.tableId) : null;
+    const billPreviewTable = billPreviewOrder ? tables?.find(t => t.id === billPreviewOrder.tableId) : null;
+    
+    const needsKotPrint = (order: Order) => {
+      return order.status === 'Confirmed' && order.items.some(item => item.kotStatus === 'New');
     }
-  };
 
-  const handleConfirmKot = (order: Order) => {
-    if (kotPreviewMode === 'new') {
-        handlePrintKOT(order);
+    const canGenerateBill = (order: Order) => {
+       const hasNewItems = order.items.some(i => i.kotStatus === 'New');
+       if (hasNewItems) return false;
+       const printedItems = order.items.filter(i => i.kotStatus === 'Printed');
+       if (printedItems.length === 0 && order.status !== 'Billed') return false;
+       if (order.status !== 'Billed') {
+          return printedItems.every(item => item.itemStatus === 'Served');
+       }
+       return true;
     }
-    // For reprints, we just close the sheet without changing data
-    setKotPreviewOrder(null);
-    setKotReprintId(null);
-  }
 
-  const handleConfirmBill = (orderId: string) => {
-    // Only update status if it's not already billed
-    const order = allOrders.find(o => o.id === orderId);
-    if(order && order.status !== 'Billed') {
-      handlePrintBill(orderId);
+    const occupiedTableIds = useMemo(() => {
+        const occupiedIds = new Set<string>();
+        (allOrders || []).forEach(order => {
+            if (switchingOrder && order.id === switchingOrder.id) return;
+            if (order.orderType === 'dine-in' && order.tableId && order.status !== 'Paid' && order.status !== 'Cancelled') {
+              occupiedIds.add(order.tableId);
+            }
+        });
+        return occupiedIds;
+    }, [allOrders, switchingOrder]);
+
+    const vacantTables = useMemo(() => {
+        return sortedTables.filter(t => !occupiedTableIds.has(t.id));
+    }, [sortedTables, occupiedTableIds]);
+
+    const handleSwitchTable = (newTableId: string) => {
+        if (switchingOrder && switchingOrder.tableId) {
+            switchTable(firestore, switchingOrder.id, newTableId, switchingOrder.tableId);
+            setSwitchingOrder(null);
+            setSelectedTableId(null);
+        }
+    };
+
+    const handleConfirmKot = (order: Order) => {
+        if (kotPreviewMode === 'new') {
+            updateOrderItemsKotStatus(firestore, order);
+        }
+        setKotPreviewOrder(null);
+        setKotReprintId(null);
     }
-    setBillPreviewOrder(null);
-  }
 
-  const openKotPreview = (order: Order, mode: 'new' | 'reprint', kotId: string | null = null) => {
-    setKotPreviewMode(mode);
-    setKotPreviewOrder(order);
-    setKotReprintId(kotId);
-  }
+    const handleConfirmBill = (orderId: string) => {
+        const order = allOrders?.find(o => o.id === orderId);
+        if(order && order.status !== 'Billed') {
+          updateOrderStatus(firestore, orderId, 'Billed');
+        }
+        setBillPreviewOrder(null);
+    }
 
+    const openKotPreview = (order: Order, mode: 'new' | 'reprint', kotId: string | null = null) => {
+        setKotPreviewMode(mode);
+        setKotPreviewOrder(order);
+        setKotReprintId(kotId);
+    }
+
+  if (isLoadingOrders || isLoadingTables) {
+    return (
+        <div className="space-y-8">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 2xl:grid-cols-9 gap-4">
+                {[...Array(22)].map((_, j) => (
+                  <Skeleton key={j} className="h-32" />
+                ))}
+            </div>
+        </div>
+    );
+  }
 
   return (
     <>
@@ -1188,7 +1190,7 @@ const TableGridView = () => {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Switch from {switchingOrder ? tables.find(t => t.id === switchingOrder.tableId)?.name : ''}</DialogTitle>
+            <DialogTitle>Switch from {switchingOrder && tables ? tables.find(t => t.id === switchingOrder.tableId)?.name : ''}</DialogTitle>
             <DialogDescription>
               Select a vacant table to move this order to.
             </DialogDescription>
@@ -1236,10 +1238,10 @@ export default function POSView({
   isSidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 }) {
-  const isHydrated = useHydratedStore(useOrderStore, (state) => state.hydrated, false);
+  const { isUserLoading } = useUser();
   const [activeView, setActiveView] = useState('orders');
 
-  if (!isHydrated) {
+  if (isUserLoading) {
     return (
       <main className="flex-1 p-6">
          <Skeleton className="h-12 w-48 mb-6" />

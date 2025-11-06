@@ -1,30 +1,27 @@
 'use client';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { useAuth, useFirebase } from '@/firebase';
+import { useEffect } from 'react';
+import { signInAnonymously } from 'firebase/auth';
 
 interface SessionState {
-  sessionId: string | null;
   tableId: string | null;
   startTime: number | null;
   isValid: boolean;
-  hydrated: boolean;
   startSession: (tableId: string) => void;
   endSession: () => void;
-  setHydrated: (hydrated: boolean) => void;
 }
 
-export const useSessionStore = create(
+const useSessionStoreInternal = create(
   persist<SessionState>(
     (set) => ({
-      sessionId: null,
       tableId: null,
       startTime: null,
       isValid: false,
-      hydrated: false,
       startSession: (tableId) => {
         const startTime = Date.now();
         set({
-          sessionId: `${tableId}-${startTime}`,
           tableId,
           startTime,
           isValid: true,
@@ -38,16 +35,23 @@ export const useSessionStore = create(
           isValid: false,
         });
       },
-      setHydrated: (hydrated) => set({ hydrated }),
     }),
     {
       name: 'session-storage',
       storage: createJSONStorage(() => localStorage),
-       onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.setHydrated(true);
-        }
-      }
     }
   )
 );
+
+export const useSessionStore = () => {
+    const { auth, user, isUserLoading } = useFirebase();
+    const { tableId, startTime, isValid, startSession, endSession } = useSessionStoreInternal();
+    
+    useEffect(() => {
+        if (!isUserLoading && !user) {
+            signInAnonymously(auth);
+        }
+    }, [isUserLoading, user, auth]);
+
+    return { tableId, startTime, isValid, startSession, endSession, user };
+}

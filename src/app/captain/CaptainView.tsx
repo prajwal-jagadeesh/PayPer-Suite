@@ -1,7 +1,14 @@
 'use client';
 import { useState, useMemo } from 'react';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useTableStore } from '@/lib/tables-store';
+import { useCollection, useFirebase, useMemoFirebase } from '@/firebase';
+import { collection, query, where, orderBy } from 'firebase/firestore';
+import {
+  updateOrderStatus,
+  updateOrderItemStatus,
+  updateItemQuantity,
+  removeItem,
+  switchTable,
+} from '@/lib/orders-store';
 import type { Order, OrderItem, Table } from '@/lib/types';
 import OrderCard from '@/components/OrderCard';
 import { Button } from '@/components/ui/button';
@@ -31,9 +38,9 @@ const groupItems = (items: OrderItem[]) => {
     items.forEach(item => {
         const existing = grouped.get(item.menuItem.id);
         if (existing) {
-            existing.quantity += 1;
+            existing.quantity += item.quantity;
         } else {
-            grouped.set(item.menuItem.id, { ...item, quantity: 1 });
+            grouped.set(item.menuItem.id, { ...item, quantity: item.quantity });
         }
     });
     return Array.from(grouped.values());
@@ -46,35 +53,37 @@ const naturalSort = (a: Table, b: Table) => {
 };
 
 export default function CaptainView() {
-  const allOrders = useHydratedStore(useOrderStore, (state) => state.orders, []);
-  const tables = useHydratedStore(useTableStore, (state) => state.tables, []);
+  const { firestore } = useFirebase();
+
+  const ordersQuery = useMemoFirebase(() => query(
+      collection(firestore, "orders"),
+      where("status", "not-in", ["Paid", "Cancelled"]),
+      orderBy("timestamp", "desc")
+    ), [firestore]);
   
-  const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
-  const updateOrderItemStatus = useOrderStore((state) => state.updateOrderItemStatus);
-  const updateItemQuantity = useOrderStore((state) => state.updateItemQuantity);
-  const removeItem = useOrderStore((state) => state.removeItem);
-  const switchTable = useOrderStore((state) => state.switchTable);
+  const { data: allOrders, isLoading: isLoadingOrders } = useCollection<Order>(ordersQuery);
+
+  const { data: tables, isLoading: isLoadingTables } = useCollection<Table>(collection(firestore, "tables"));
   
-  const isHydrated = useHydratedStore(useOrderStore, (state) => state.hydrated, false);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [switchingOrder, setSwitchingOrder] = useState<Order | null>(null);
 
-  const orders = allOrders.filter(o => o.status !== 'Paid' && o.status !== 'Cancelled');
+  const orders = allOrders || [];
   
-  const handleMarkServed = (orderId: string, kotId: string) => {
-    updateOrderItemStatus(orderId, kotId, 'Served');
+  const handleMarkServed = (orderId: string, kotId: string, currentItems: OrderItem[]) => {
+    updateOrderItemStatus(firestore, orderId, kotId, 'Served', currentItems);
   };
   
   const handlePayment = (orderId: string) => {
-    updateOrderStatus(orderId, 'Paid');
+    updateOrderStatus(firestore, orderId, 'Paid');
   };
 
   const handleCancel = (orderId: string) => {
-    updateOrderStatus(orderId, 'Cancelled');
+    updateOrderStatus(firestore, orderId, 'Cancelled');
   };
 
   const handleConfirmOrder = (orderId: string) => {
-    updateOrderStatus(orderId, 'Confirmed');
+    updateOrderStatus(firestore, orderId, 'Confirmed');
   };
 
   const canCancelOrder = (order: Order) => {
@@ -87,16 +96,14 @@ export default function CaptainView() {
   
   const editingOrder = orders.find(o => o.id === editingOrderId);
   
-  const tableMap = useMemo(() => new Map(tables.map(t => [t.id, t.name])), [tables]);
-  const sortedTables = useMemo(() => [...tables].sort(naturalSort), [tables]);
-
+  const tableMap = useMemo(() => new Map(tables?.map(t => [t.id, t.name])), [tables]);
+  const sortedTables = useMemo(() => [...(tables || [])].sort(naturalSort), [tables]);
 
   const occupiedTableIds = useMemo(() => {
     const occupiedIds = new Set<string>();
     orders.forEach(order => {
-        // The order being switched is not considered "occupied" for the purpose of finding a new table
         if (switchingOrder && order.id === switchingOrder.id) return;
-        occupiedIds.add(order.tableId!);
+        if(order.tableId) occupiedIds.add(order.tableId);
     });
     return occupiedIds;
   }, [orders, switchingOrder]);
@@ -106,13 +113,9 @@ export default function CaptainView() {
   }, [sortedTables, occupiedTableIds]);
 
   const handleSwitchTable = (newTableId: string) => {
-    if (switchingOrder) {
-      const success = switchTable(switchingOrder.id, newTableId);
-      if (success) {
-        setSwitchingOrder(null);
-      } else {
-        alert('Could not switch table. The selected table might be occupied.');
-      }
+    if (switchingOrder && switchingOrder.tableId) {
+      switchTable(firestore, switchingOrder.id, newTableId, switchingOrder.tableId);
+      setSwitchingOrder(null);
     }
   };
 
@@ -121,7 +124,7 @@ export default function CaptainView() {
   const newItemsTotal = newItemsForEditing?.reduce((acc, item) => acc + item.menuItem.price * item.quantity, 0) || 0;
 
 
-  if (!isHydrated) {
+  if (isLoadingOrders || isLoadingTables) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
         {[...Array(10)].map((_, i) => (
@@ -147,8 +150,8 @@ export default function CaptainView() {
               >
                 <OrderCard 
                   order={order} 
-                  tableName={tableMap.get(order.tableId!)} 
-                  onServeItem={handleMarkServed} 
+                  tableName={order.tableId ? tableMap.get(order.tableId) : undefined} 
+                  onServeItem={(orderId, kotId) => handleMarkServed(orderId, kotId, order.items)} 
                   showKotDetails={false}
                   onSwitchTable={() => setSwitchingOrder(order)}
                   onEditItems={hasNewItems(order) ? () => setEditingOrderId(order.id) : undefined}
@@ -191,18 +194,18 @@ export default function CaptainView() {
                           <p className="font-semibold">{item.menuItem.name}</p>
                           <p className="text-sm text-muted-foreground">₹{item.menuItem.price.toFixed(2)}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateItemQuantity(editingOrder!.id, item.menuItem.id, item.quantity - 1)}>
+                            <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateItemQuantity(firestore, editingOrder!, item.menuItem.id, item.quantity - 1)}>
                               <Minus className="h-3 w-3" />
                             </Button>
                             <span>{item.quantity}</span>
-                             <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateItemQuantity(editingOrder!.id, item.menuItem.id, item.quantity + 1)}>
+                             <Button size="icon" variant="outline" className="h-6 w-6" onClick={() => updateItemQuantity(firestore, editingOrder!, item.menuItem.id, item.quantity + 1)}>
                               <Plus className="h-3 w-3" />
                             </Button>
                           </div>
                         </div>
                         <div className="text-right">
                             <p className="font-semibold">₹{(item.menuItem.price * item.quantity).toFixed(2)}</p>
-                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => removeItem(editingOrder!.id, item.menuItem.id)}>
+                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => removeItem(firestore, editingOrder!.id, item.menuItem.id, editingOrder!.items)}>
                                <Trash2 className="h-4 w-4"/>
                             </Button>
                         </div>
@@ -238,7 +241,7 @@ export default function CaptainView() {
       <Dialog open={!!switchingOrder} onOpenChange={(isOpen) => !isOpen && setSwitchingOrder(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Switch from {switchingOrder ? tableMap.get(switchingOrder.tableId!) : ''}</DialogTitle>
+            <DialogTitle>Switch from {switchingOrder && switchingOrder.tableId ? tableMap.get(switchingOrder.tableId) : ''}</DialogTitle>
             <DialogDescription>
               Select a vacant table to move this order to.
             </DialogDescription>

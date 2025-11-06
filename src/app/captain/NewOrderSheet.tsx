@@ -1,8 +1,8 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
-import { useOrderStore, useHydratedStore } from '@/lib/orders-store';
-import { useTableStore } from '@/lib/tables-store';
-import { useMenuStore } from '@/lib/menu-store';
+import { useCollection, useFirebase, useUser } from '@/firebase';
+import { collection, query, where } from 'firebase/firestore';
+import { addOrder, addItemsToOrder } from '@/lib/orders-store';
 import type { MenuItem, OrderItem, Table, Order } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter, SheetDescription } from '@/components/ui/sheet';
@@ -10,7 +10,7 @@ import { Plus, Minus, Trash2 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import ItemStatusBadge from '@/components/ItemStatusBadge';
 
@@ -25,7 +25,6 @@ const naturalSort = (a: Table, b: Table) => {
     return numA - numB;
 };
 
-// Helper to group items for display
 const groupItemsForDisplay = (items: OrderItem[]) => {
     const grouped = new Map<string, OrderItem>();
     items.forEach(item => {
@@ -39,14 +38,16 @@ const groupItemsForDisplay = (items: OrderItem[]) => {
     return Array.from(grouped.values());
 };
 
-
 export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetProps) {
-    const allOrders = useHydratedStore(useOrderStore, state => state.orders, []);
-    const tables = useHydratedStore(useTableStore, state => state.tables, []);
-    const allMenuItems = useHydratedStore(useMenuStore, state => state.menuItems, []);
-    const menuCategories = useHydratedStore(useMenuStore, state => state.menuCategories, []);
-    const addOrder = useOrderStore(state => state.addOrder);
-    const addItemsToOrder = useOrderStore(state => state.addItemsToOrder);
+    const { firestore } = useFirebase();
+    const { user } = useUser();
+    
+    const { data: allOrders } = useCollection<Order>(collection(firestore, 'orders'));
+    const { data: tables } = useCollection<Table>(collection(firestore, 'tables'));
+    const { data: allMenuItems } = useCollection<MenuItem>(collection(firestore, 'menuItems'));
+    const { data: menuCategoriesData } = useCollection(collection(firestore, 'menuCategories'));
+    
+    const menuCategories = useMemo(() => menuCategoriesData?.map(c => c.name) || [], [menuCategoriesData]);
 
     const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
     const [cart, setCart] = useState<Omit<OrderItem, 'kotStatus' | 'itemStatus' | 'kotId'>[]>([]);
@@ -61,12 +62,12 @@ export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetPro
             }
         }
     }, [isOpen, menuCategories]);
-
-    const sortedTables = useMemo(() => [...tables].sort(naturalSort), [tables]);
-    const menuItems = useMemo(() => allMenuItems.filter(item => item.available), [allMenuItems]);
+    
+    const sortedTables = useMemo(() => [...(tables || [])].sort(naturalSort), [tables]);
+    const menuItems = useMemo(() => (allMenuItems || []).filter(item => item.available), [allMenuItems]);
 
     const activeOrder = useMemo(() => {
-      if (!selectedTableId) return null;
+      if (!selectedTableId || !allOrders) return null;
       return allOrders.find(o => o.tableId === selectedTableId && o.status !== 'Paid' && o.status !== 'Cancelled');
     }, [allOrders, selectedTableId]);
 
@@ -102,21 +103,22 @@ export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetPro
     }, [cart]);
 
     const placeOrUpdateOrder = () => {
-        if (cart.length === 0 || !selectedTableId) return;
+        if (cart.length === 0 || !selectedTableId || !user) return;
 
         if (activeOrder) {
-            addItemsToOrder(activeOrder.id, cart);
+            addItemsToOrder(firestore, activeOrder, cart);
         } else {
-            addOrder({
+            addOrder(firestore, {
                 tableId: selectedTableId,
                 items: cart,
+                userId: user.uid,
             });
         }
         onOpenChange(false);
     };
 
     const filteredMenuItems = useMemo(() => menuItems.filter(item => item.category === activeTab), [activeTab, menuItems]);
-    const selectedTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
+    const selectedTable = useMemo(() => tables?.find(t => t.id === selectedTableId), [tables, selectedTableId]);
 
 
     return (
@@ -149,7 +151,7 @@ export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetPro
                         {/* Menu Section */}
                         <div className="col-span-2 flex flex-col overflow-hidden">
                              <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="w-full flex-1 flex flex-col overflow-hidden">
-                                <TabsList className="grid w-full grid-cols-4 lg:grid-cols-5 xl:grid-cols-7">
+                                <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${menuCategories.length > 0 ? menuCategories.length : 1}, minmax(0, 1fr))`}}>
                                 {menuCategories.map((cat) => (
                                     <TabsTrigger key={cat} value={cat}>{cat}</TabsTrigger>
                                 ))}
@@ -244,7 +246,7 @@ export default function NewOrderSheet({ isOpen, onOpenChange }: NewOrderSheetPro
                                             <span>₹{(activeOrder.total + cartTotal).toFixed(2)}</span>
                                           </div>
                                         )}
-                                        <Button size="lg" className="w-full" onClick={placeOrUpdateOrder}>
+                                        <Button size="lg" className="w-full" onClick={placeOrUpdateOrder} disabled={!user}>
                                             {activeOrder ? 'Add to Order' : 'Place New Order'}
                                         </Button>
                                     </div>

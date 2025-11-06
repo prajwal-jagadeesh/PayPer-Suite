@@ -14,7 +14,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
-import { useOrderStore } from '@/lib/orders-store';
+import { useFirebase } from '@/firebase';
+import { applyDiscount, setPaymentMethod } from '@/lib/orders-store';
+
 
 interface OrderCardProps {
   order: Order;
@@ -29,7 +31,6 @@ interface OrderCardProps {
   onReprintKot?: (kotId: string) => void;
 }
 
-// Helper to group items for display
 const groupItemsForDisplay = (items: OrderItem[]) => {
     const grouped = new Map<string, OrderItem & { count: number }>();
     items.forEach(item => {
@@ -69,15 +70,18 @@ export default function OrderCard({
     showDiscountControls = false,
     onReprintKot,
 }: OrderCardProps) {
-  const applyDiscount = useOrderStore(state => state.applyDiscount);
-  const setPaymentMethod = useOrderStore(state => state.setPaymentMethod);
+  const { firestore } = useFirebase();
   
   const handleDiscountTypeChange = (type: DiscountType) => {
-    applyDiscount(order.id, order.discount || 0, type);
+    applyDiscount(firestore, order, order.discount || 0, type);
   }
   
   const handleDiscountValueChange = (value: number) => {
-     applyDiscount(order.id, value, order.discountType || 'percentage');
+     applyDiscount(firestore, order, value, order.discountType || 'percentage');
+  }
+  
+  const handleSetPaymentMethod = (method: PaymentMethod | null) => {
+    setPaymentMethod(firestore, order.id, method);
   }
 
   const newItems = groupItemsForDisplay(order.items.filter(i => i.kotStatus === 'New'));
@@ -154,7 +158,7 @@ export default function OrderCard({
                       <QrCode className="h-5 w-5"/>
                       <p className="font-bold">Cash/QR Payment</p>
                   </div>
-                  <Button size="sm" className="h-7" onClick={() => setPaymentMethod(order.id, null)}>
+                  <Button size="sm" className="h-7" onClick={() => handleSetPaymentMethod(null)}>
                       <CircleCheck className="h-4 w-4 mr-1" />
                       Acknowledge
                   </Button>
@@ -169,7 +173,7 @@ export default function OrderCard({
                       <CreditCard className="h-5 w-5"/>
                       <p className="font-bold">Card Payment Requested</p>
                   </div>
-                  <Button size="sm" className="h-7" onClick={() => setPaymentMethod(order.id, null)}>
+                  <Button size="sm" className="h-7" onClick={() => handleSetPaymentMethod(null)}>
                       <CircleCheck className="h-4 w-4 mr-1" />
                       Acknowledge
                   </Button>

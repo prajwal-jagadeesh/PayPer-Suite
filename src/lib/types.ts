@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export type OrderStatus =
   | 'New'
   | 'Confirmed'
@@ -45,6 +47,7 @@ export interface CustomerDetails {
 
 export interface Order {
   id: string;
+  userId: string;
   orderType: OrderType;
   tableId?: string; // For dine-in
   onlinePlatform?: OnlinePlatform; // For online orders
@@ -53,6 +56,7 @@ export interface Order {
   items: OrderItem[];
   status: OrderStatus;
   timestamp: number;
+  createdAt: Timestamp;
   total: number;
   originalTotal?: number;
   discount?: number;
