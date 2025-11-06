@@ -1,0 +1,389 @@
+{
+  "entities": {
+    "Restaurant": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Restaurant",
+      "type": "object",
+      "description": "Represents a restaurant.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Restaurant entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the restaurant."
+        },
+        "address": {
+          "type": "string",
+          "description": "Address of the restaurant."
+        },
+        "contactNumber": {
+          "type": "string",
+          "description": "Contact number of the restaurant."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Table": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Table",
+      "type": "object",
+      "description": "Represents a table in the restaurant.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Table entity."
+        },
+        "restaurantId": {
+          "type": "string",
+          "description": "Reference to Restaurant. (Relationship: Restaurant 1:N Table)"
+        },
+        "tableNumber": {
+          "type": "string",
+          "description": "Table number or identifier within the restaurant."
+        },
+        "qrCode": {
+          "type": "string",
+          "description": "QR code associated with the table for menu access and ordering."
+        }
+      },
+      "required": [
+        "id",
+        "restaurantId",
+        "tableNumber"
+      ]
+    },
+    "MenuCategory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MenuCategory",
+      "type": "object",
+      "description": "Represents a category of menu items.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the MenuCategory entity."
+        },
+        "restaurantId": {
+          "type": "string",
+          "description": "Reference to Restaurant. (Relationship: Restaurant 1:N MenuCategory)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the menu category (e.g., Appetizers, Main Courses)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the menu category."
+        }
+      },
+      "required": [
+        "id",
+        "restaurantId",
+        "name"
+      ]
+    },
+    "MenuItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "MenuItem",
+      "type": "object",
+      "description": "Represents a single item on the menu.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the MenuItem entity."
+        },
+        "menuCategoryId": {
+          "type": "string",
+          "description": "Reference to MenuCategory. (Relationship: MenuCategory 1:N MenuItem)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the menu item."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the menu item."
+        },
+        "price": {
+          "type": "number",
+          "description": "Price of the menu item."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "URL of the image for the menu item."
+        },
+        "isPopular": {
+          "type": "boolean",
+          "description": "Flag to indicate if the item is popular"
+        }
+      },
+      "required": [
+        "id",
+        "menuCategoryId",
+        "name",
+        "price"
+      ]
+    },
+    "Order": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Order",
+      "type": "object",
+      "description": "Represents a customer order.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Order entity."
+        },
+        "tableId": {
+          "type": "string",
+          "description": "Reference to Table. (Relationship: Table 1:N Order)"
+        },
+        "orderTime": {
+          "type": "string",
+          "description": "Timestamp of when the order was placed.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "Current status of the order (e.g., Placed, Confirmed, Preparing, Ready, Served, Paid)."
+        },
+        "captainId": {
+          "type": "string",
+          "description": "Reference to Captain. (Relationship: Captain 1:N Order)"
+        },
+        "paymentReceived": {
+          "type": "boolean",
+          "description": "Flag to indicate if the payment is complete"
+        }
+      },
+      "required": [
+        "id",
+        "tableId",
+        "orderTime",
+        "status"
+      ]
+    },
+    "OrderItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "OrderItem",
+      "type": "object",
+      "description": "Represents a single item within an order.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the OrderItem entity."
+        },
+        "orderId": {
+          "type": "string",
+          "description": "Reference to Order. (Relationship: Order 1:N OrderItem)"
+        },
+        "menuItemId": {
+          "type": "string",
+          "description": "Reference to MenuItem. (Relationship: MenuItem 1:N OrderItem)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity of the menu item in the order."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Special instructions or notes for the order item."
+        }
+      },
+      "required": [
+        "id",
+        "orderId",
+        "menuItemId",
+        "quantity"
+      ]
+    },
+    "Captain": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Captain",
+      "type": "object",
+      "description": "Represents a captain.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Captain entity."
+        },
+        "restaurantId": {
+          "type": "string",
+          "description": "Reference to Restaurant. (Relationship: Restaurant 1:N Captain)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the captain."
+        },
+        "contactNumber": {
+          "type": "string",
+          "description": "Contact number of the captain."
+        }
+      },
+      "required": [
+        "id",
+        "restaurantId",
+        "name"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/restaurants/{restaurantId}",
+        "definition": {
+          "entityName": "Restaurant",
+          "schema": {
+            "$ref": "#/backend/entities/Restaurant"
+          },
+          "description": "Stores restaurant information. Includes parameters for unique identification.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/tables/{tableId}",
+        "definition": {
+          "entityName": "Table",
+          "schema": {
+            "$ref": "#/backend/entities/Table"
+          },
+          "description": "Stores table information for each restaurant. Includes restaurantId as a parameter and tableId for unique identification within the restaurant.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "tableId",
+              "description": "Unique identifier for the table."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/menuCategories/{menuCategoryId}",
+        "definition": {
+          "entityName": "MenuCategory",
+          "schema": {
+            "$ref": "#/backend/entities/MenuCategory"
+          },
+          "description": "Stores menu categories for each restaurant. Includes restaurantId as a parameter and menuCategoryId for unique identification within the restaurant.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "menuCategoryId",
+              "description": "Unique identifier for the menu category."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/menuCategories/{menuCategoryId}/menuItems/{menuItemId}",
+        "definition": {
+          "entityName": "MenuItem",
+          "schema": {
+            "$ref": "#/backend/entities/MenuItem"
+          },
+          "description": "Stores menu items within each menu category for each restaurant. Includes restaurantId, menuCategoryId as parameters and menuItemId for unique identification.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "menuCategoryId",
+              "description": "Unique identifier for the menu category."
+            },
+            {
+              "name": "menuItemId",
+              "description": "Unique identifier for the menu item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/orders/{orderId}",
+        "definition": {
+          "entityName": "Order",
+          "schema": {
+            "$ref": "#/backend/entities/Order"
+          },
+          "description": "Stores order information for each restaurant. Includes tableId and captainId for linking to the respective entities.  Includes denormalized 'captainId' for authorization independence.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "orderId",
+              "description": "Unique identifier for the order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/orders/{orderId}/orderItems/{orderItemId}",
+        "definition": {
+          "entityName": "OrderItem",
+          "schema": {
+            "$ref": "#/backend/entities/OrderItem"
+          },
+          "description": "Stores order items within each order. Includes orderId and menuItemId for linking to the respective entities.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "orderId",
+              "description": "Unique identifier for the order."
+            },
+            {
+              "name": "orderItemId",
+              "description": "Unique identifier for the order item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/restaurants/{restaurantId}/captains/{captainId}",
+        "definition": {
+          "entityName": "Captain",
+          "schema": {
+            "$ref": "#/backend/entities/Captain"
+          },
+          "description": "Stores captain information for each restaurant. Includes restaurantId as a parameter and captainId for unique identification within the restaurant.",
+          "params": [
+            {
+              "name": "restaurantId",
+              "description": "Unique identifier for the restaurant."
+            },
+            {
+              "name": "captainId",
+              "description": "Unique identifier for the captain."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support Nikee's Zara OrderFlow application, focusing on real-time order management across customer, captain, POS, and KDS apps. The design prioritizes authorization independence and efficient data retrieval.  \n\nTo ensure authorization independence, the structure avoids hierarchical `get()` calls in security rules.  \n\nThe core of the system revolves around restaurants, tables, menus, orders, and order items. Each restaurant has its own set of tables, menu categories, and menu items. Orders are placed at specific tables and are handled by captains.  \n\nThe structure uses hierarchical paths for user-owned and related data. For instance, tables, menu categories, and captains are nested under the restaurant. Orders are associated with tables and captains. This facilitates easy querying and management of data within a specific restaurant context. Since orders are assigned to captains, and captain is linked to restaurant, all orders can be fetched for the assigned restaurant. The orders collection includes a denormalized `captainId` field.  \n\nThis design supports QAPs by segregating data based on restaurant and table context, allowing for secure and efficient listing of orders, menu items, and other entities within the relevant scopes. Security rules can be written to ensure that only authorized users (captains, restaurant owners) can access specific data based on their role and the restaurant/table they are associated with."
+  }
+}

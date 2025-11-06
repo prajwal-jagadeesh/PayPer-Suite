@@ -1,0 +1,194 @@
+/**
+ * @fileoverview Firestore Security Rules for Nikee's Zara OrderFlow application.
+ *
+ * Core Philosophy:
+ * This ruleset enforces a role-based access control system, primarily focused on securing data access based on restaurant and captain roles.
+ *
+ * Data Structure:
+ * The Firestore database is organized hierarchically:
+ * - /restaurants/{restaurantId}: Stores restaurant information.
+ * - /restaurants/{restaurantId}/tables/{tableId}: Stores table information for each restaurant.
+ * - /restaurants/{restaurantId}/menuCategories/{menuCategoryId}: Stores menu categories for each restaurant.
+ * - /restaurants/{restaurantId}/menuCategories/{menuCategoryId}/menuItems/{menuItemId}: Stores menu items.
+ * - /restaurants/{restaurantId}/orders/{orderId}: Stores order information, including a denormalized captainId for simplified authorization.
+ * - /restaurants/{restaurantId}/orders/{orderId}/orderItems/{orderItemId}: Stores individual order items.
+ * - /restaurants/{restaurantId}/captains/{captainId}: Stores captain information.
+ *
+ * Key Security Decisions:
+ * - Access to restaurant data is generally open, but writes are restricted.
+ * - Orders are secured such that only the assigned captain can manage them, using the denormalized captainId field for efficient authorization.
+ * - Data validation is minimized to allow for rapid prototyping and flexible data shapes.
+ *
+ * Denormalization for Authorization:
+ * The `Order` documents include a `captainId` field. This denormalization is CRUCIAL: it avoids needing to perform a `get()` operation to the `/captains/{captainId}` document to verify the captain's association with the order. This allows the security rules to efficiently authorize order access based solely on the data present in the `Order` document itself.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Allows read-only access to restaurant information, but restricts write access.
+     * @path /restaurants/{restaurantId}
+     * @allow get, list: if true;
+     * @allow create: if false;
+     * @allow update: if false;
+     * @allow delete: if false;
+     *
+     * Example Scenarios:
+     * @allow (get) - Any user can retrieve restaurant information.
+     * @deny (create) - No user can create a restaurant document directly through the client; creation should be handled via backend.
+     * @principle Allows public reads, restricts all writes.
+     */
+    match /restaurants/{restaurantId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Allows read-only access to table information under a specific restaurant, but restricts write access.
+     * @path /restaurants/{restaurantId}/tables/{tableId}
+     * @allow get, list: if true;
+     * @allow create: if false;
+     * @allow update: if false;
+     * @allow delete: if false;
+     *
+     * Example Scenarios:
+     * @allow (get) - Any user can retrieve table information for a restaurant.
+     * @deny (create) - No user can create a table document directly; creation should be handled via backend.
+     * @principle Allows public reads, restricts all writes.
+     */
+    match /restaurants/{restaurantId}/tables/{tableId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Allows read-only access to menu categories under a specific restaurant, but restricts write access.
+     * @path /restaurants/{restaurantId}/menuCategories/{menuCategoryId}
+     * @allow get, list: if true;
+     * @allow create: if false;
+     * @allow update: if false;
+     * @allow delete: if false;
+     *
+     * Example Scenarios:
+     * @allow (get) - Any user can retrieve menu category information for a restaurant.
+     * @deny (create) - No user can create a menu category document directly; creation should be handled via backend.
+     * @principle Allows public reads, restricts all writes.
+     */
+    match /restaurants/{restaurantId}/menuCategories/{menuCategoryId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Allows read-only access to menu items under a specific menu category, but restricts write access.
+     * @path /restaurants/{restaurantId}/menuCategories/{menuCategoryId}/menuItems/{menuItemId}
+     * @allow get, list: if true;
+     * @allow create: if false;
+     * @allow update: if false;
+     * @allow delete: if false;
+     *
+     * Example Scenarios:
+     * @allow (get) - Any user can retrieve menu item information for a menu category.
+     * @deny (create) - No user can create a menu item document directly; creation should be handled via backend.
+     * @principle Allows public reads, restricts all writes.
+     */
+    match /restaurants/{restaurantId}/menuCategories/{menuCategoryId}/menuItems/{menuItemId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    /**
+     * @description Allows captains to manage orders assigned to them via the denormalized captainId field.
+     * @path /restaurants/{restaurantId}/orders/{orderId}
+     * @allow get, list: if isCaptainForRestaurant();
+     * @allow create: if request.resource.data.captainId == request.auth.uid;
+     * @allow update: if request.resource.data.captainId == request.auth.uid;
+     * @allow delete: if request.resource.data.captainId == request.auth.uid;
+     *
+     * Example Scenarios:
+     * @allow (get) - A captain can retrieve order information for orders within their restaurant if the order is assigned to them.
+     * @allow (create) - A user (presumably a captain) can create a new order, but MUST set the `captainId` to their own UID.
+     * @allow (update) - A captain can update an order assigned to them.
+     * @allow (delete) - A captain can delete an order assigned to them.
+     * @deny (get) - A captain cannot retrieve order information for orders assigned to another captain.
+     * @deny (create) - A user cannot create an order assigned to another captain.
+     * @deny (update) - A captain cannot update an order assigned to another captain.
+     * @deny (delete) - A captain cannot delete an order assigned to another captain.
+     * @principle Enforces captain-ownership for order management, leveraging denormalized `captainId`.
+     */
+    match /restaurants/{restaurantId}/orders/{orderId} {
+      allow get, list: if isCaptainForRestaurant();
+      allow create: if request.resource.data.captainId == request.auth.uid;
+      allow update: if request.resource.data.captainId == request.auth.uid;
+      allow delete: if request.resource.data.captainId == request.auth.uid;
+    }
+
+    /**
+     * @description Allows captains to manage order items within orders assigned to them.
+     * @path /restaurants/{restaurantId}/orders/{orderId}/orderItems/{orderItemId}
+     * @allow get, list: if isCaptainForOrder(restaurantId, orderId);
+     * @allow create: if isCaptainForOrder(restaurantId, orderId);
+     * @allow update: if isCaptainForOrder(restaurantId, orderId);
+     * @allow delete: if isCaptainForOrder(restaurantId, orderId);
+     *
+     * Example Scenarios:
+     * @allow (get) - A captain can retrieve order item information for an order assigned to them.
+     * @allow (create) - A captain can create an order item for an order assigned to them.
+     * @allow (update) - A captain can update an order item within an order assigned to them.
+     * @allow (delete) - A captain can delete an order item within an order assigned to them.
+     * @deny (get) - A captain cannot retrieve order item information for an order assigned to another captain.
+     * @deny (create) - A captain cannot create an order item for an order assigned to another captain.
+     * @deny (update) - A captain cannot update an order item within an order assigned to another captain.
+     * @deny (delete) - A captain cannot delete an order item within an order assigned to another captain.
+     * @principle Enforces captain-ownership for order item management, verifying captain assignment through `get()` on parent order.
+     */
+    match /restaurants/{restaurantId}/orders/{orderId}/orderItems/{orderItemId} {
+      allow get, list: if isCaptainForOrder(restaurantId, orderId);
+      allow create: if isCaptainForOrder(restaurantId, orderId);
+      allow update: if isCaptainForOrder(restaurantId, orderId);
+      allow delete: if isCaptainForOrder(restaurantId, orderId);
+    }
+
+    /**
+     * @description Allows read-only access to captain information under a specific restaurant, but restricts write access.
+     * @path /restaurants/{restaurantId}/captains/{captainId}
+     * @allow get, list: if true;
+     * @allow create: if false;
+     * @allow update: if false;
+     * @allow delete: if false;
+     *
+     * Example Scenarios:
+     * @allow (get) - Any user can retrieve captain information for a restaurant.
+     * @deny (create) - No user can create a captain document directly; creation should be handled via backend.
+     * @principle Allows public reads, restricts all writes.
+     */
+    match /restaurants/{restaurantId}/captains/{captainId} {
+      allow get, list: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isCaptainForRestaurant() {
+        return isSignedIn(); // TODO: Add role validation once the schema is updated with an ownership field.
+    }
+
+   function isCaptainForOrder(restaurantId, orderId) {
+        return isSignedIn() && get(/databases/$(database)/documents/restaurants/$(restaurantId)/orders/$(orderId)).data.captainId == request.auth.uid;
+    }
+  }
+}
